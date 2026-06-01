@@ -1,132 +1,127 @@
 """item list — 查看当前账号的在售商品。
 
-打开个人主页 https://www.goofish.com/personal?userId={unb}，
-浏览器渲染 + auto_scroll 触发懒加载，提取商品卡片。
+调 mtop.idle.web.xyh.item.list v1.0，返回结构化数据。
 """
-
 from __future__ import annotations
 
-import asyncio
-import re
 from typing import Any
 
 from goofish_cli.core import Session, Strategy, command
-from goofish_cli.core.browser import auto_scroll, goofish_page
-from goofish_cli.core.errors import AuthRequiredError, GoofishError
+from goofish_cli.core.mtop import call
 
 MAX_LIMIT = 100
+DEFAULT_PAGE_SIZE = 20
 
 
 def _normalize_limit(value: Any) -> int:
     try:
         n = int(value)
     except (TypeError, ValueError):
-        return 50
+        return DEFAULT_PAGE_SIZE
     return min(MAX_LIMIT, max(1, n))
 
 
 def _item_id_from_url(url: str) -> str:
+    import re
+
     m = re.search(r"[?&]id=(\d+)", url or "")
     return m.group(1) if m else ""
 
 
-_EXTRACT_JS = r"""
-(limit) => (async () => {
-  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-  const waitFor = async (predicate, timeoutMs = 10000) => {
-    const start = Date.now();
-    while (Date.now() - start < timeoutMs) {
-      if (predicate()) return true;
-      await wait(150);
+STATUS_MAP = {"0": "在售", "1": "已下架"}
+
+
+def _extract_item(card_data: dict[str, Any]) -> dict[str, Any]:
+    """从 cardData 提取商品关键字段。"""
+    item_id = str(card_data.get("id", ""))
+    title = card_data.get("title", "")
+    # priceInfo: {"preText": "¥", "price": "1999"}
+    price_info = card_data.get("priceInfo") or {}
+    price = (price_info.get("preText") or "") + str(price_info.get("price") or "")
+    status_code = str(card_data.get("itemStatus", ""))
+    status = STATUS_MAP.get(status_code, status_code)
+    # picInfo: {"picUrl": "https://..."}
+    pic_info = card_data.get("picInfo") or {}
+    image_url = pic_info.get("picUrl", "")
+    # itemLabelDataVO 标签：labelData → r3/r2/... → tagList → data.content
+    labels = []
+    label_vo = card_data.get("itemLabelDataVO") or {}
+    if isinstance(label_vo, dict):
+        label_data = label_vo.get("labelData") or {}
+        for _region, region_data in label_data.items():
+            for tag in (region_data.get("tagList") if isinstance(region_data, dict) else []) or []:
+                tag_data = tag.get("data") if isinstance(tag, dict) else None
+                if isinstance(tag_data, dict) and tag_data.get("content"):
+                    labels.append(tag_data["content"])
+    return {
+        "item_id": item_id,
+        "title": title,
+        "price": price,
+        "status": status,
+        "image_url": image_url,
+        "tags": labels,
     }
-    return false;
-  };
-
-  const clean = (v) => (v || '').replace(/\\s+/g, ' ').trim();
-
-  // 个人主页的商品卡片选择器
-  const sel = {
-    card: 'a[href*="/item?id="]',
-    title: '[class*="title"], [class*="name"]',
-    price: '[class*="price"]',
-    status: '[class*="status"], [class*="tag"]',
-    image: 'img[src*="img.alicdn.com"], img[src*="goofish"]',
-  };
-
-  // 等待卡片或空态出现
-  await waitFor(() => {
-    const bodyText = document.body?.innerText || '';
-    return Boolean(
-      document.querySelector(sel.card)
-      || /请先登录|登录后|验证码|安全验证/.test(bodyText)
-      || /暂无商品|还没有发布|没有商品|暂无宝贝/.test(bodyText)
-    );
-  });
-
-  const bodyText = document.body?.innerText || '';
-  const requiresAuth = /请先登录|登录后/.test(bodyText);
-  const blocked = /验证码|安全验证|异常访问/.test(bodyText);
-  const empty = /暂无商品|还没有发布|没有商品|暂无宝贝|暂无在售/.test(bodyText);
-
-  const items = Array.from(document.querySelectorAll(sel.card))
-    .slice(0, limit)
-    .map((card) => {
-      const href = card.href || card.getAttribute('href') || '';
-      const title = clean(card.querySelector(sel.title)?.textContent || '');
-      const priceEl = card.querySelector(sel.price);
-      const price = clean(priceEl?.textContent || '');
-      const img = card.querySelector(sel.image);
-      const imageUrl = img ? (img.src || img.getAttribute('data-src') || '') : '';
-      // 尝试从标签/角标提取状态（在售/已下架等）
-      const tags = Array.from(card.querySelectorAll(sel.status))
-        .map(n => clean(n.textContent))
-        .filter(Boolean);
-
-      return { title, url: href, price, image_url: imageUrl, tags };
-    })
-    .filter(it => it.title && it.url);
-
-  return { requiresAuth, blocked, empty, items, bodyPreview: bodyText.slice(0, 500) };
-})()
-"""
-
-
-async def _run(limit: int) -> list[dict[str, Any]]:
-    session = Session.load()
-    url = f"https://www.goofish.com/personal?userId={session.unb}"
-
-    async with goofish_page() as page:
-        await page.goto(url, wait_until="domcontentloaded")
-        await page.wait_for_timeout(2000)
-        await auto_scroll(page, times=3)
-        payload = await page.evaluate(_EXTRACT_JS, limit)
-
-    if not isinstance(payload, dict):
-        raise GoofishError("个人主页返回结构非预期")
-
-    items = payload.get("items") or []
-    if not items and payload.get("requiresAuth"):
-        raise AuthRequiredError("个人主页要求登录，cookies 可能失效")
-    if not items and payload.get("blocked"):
-        raise GoofishError("个人主页被验证码/安全验证拦截")
-
-    return [
-        {
-            "rank": i + 1,
-            "item_id": _item_id_from_url(it.get("url", "")),
-            **it,
-        }
-        for i, it in enumerate(items)
-    ]
 
 
 @command(
     namespace="item",
     name="list",
-    description="查看当前账号的在售商品（浏览器渲染）",
+    description="查看当前账号的在售商品（API 直签）",
     strategy=Strategy.COOKIE,
-    columns=["rank", "item_id", "title", "price", "tags"],
+    columns=["rank", "item_id", "title", "price", "status"],
 )
 def list_items(limit: int = 50) -> dict[str, Any]:
-    items = asyncio.run(_run(_normalize_limit(limit)))
+    session = Session.load()
+    n = _normalize_limit(limit)
+
+    items: list[dict[str, Any]] = []
+    page_number = 1
+
+    while len(items) < n:
+        raw = call(
+            session,
+            api="mtop.idle.web.xyh.item.list",
+            data={
+                "needGroupInfo": True,
+                "pageNumber": page_number,
+                "userId": session.unb,
+                "pageSize": DEFAULT_PAGE_SIZE,
+            },
+            version="1.0",
+            spm_cnt="a21ybx.item.0.0",
+        )
+        data = raw.get("data", {}) or {}
+
+        # 置顶商品（仅首页）
+        if page_number == 1:
+            top = data.get("topItem")
+            if top and isinstance(top, dict):
+                top_data = top.get("cardData") or top
+                item = _extract_item(top_data)
+                if item["item_id"]:
+                    items.append(item)
+
+        # 普通列表
+        for card in data.get("cardList") or []:
+            card_data = card.get("cardData") or card
+            item = _extract_item(card_data)
+            if item["item_id"]:
+                items.append(item)
+
+        if not data.get("nextPage"):
+            break
+        page_number += 1
+
+    items = items[:n]
+
+    for i, it in enumerate(items):
+        it["rank"] = i + 1
+
     return {"items": items, "total": len(items)}
+
+
+__test__ = {
+    "_normalize_limit": _normalize_limit,
+    "_item_id_from_url": _item_id_from_url,
+    "_extract_item": _extract_item,
+}
