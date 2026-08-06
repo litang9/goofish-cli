@@ -32,11 +32,12 @@
 -->
 
 `goofish-cli` 把闲鱼（Xianyu/Goofish）的核心运营能力抽成一套结构化命令，
-**同一份定义**同时输出给三种消费者：
+**同一份定义**同时输出给四种消费者：
 
 - 👨‍💻 **人类**：`goofish item get 12345 --format table`
 - 🤖 **AI Agent（Claude Code / Cursor / Codex）**：`uvx goofish-cli` → 自动注册成 MCP tool
 - 🧩 **Claude Skills**（v0.3）：5 个内置 skill，`goofish skills install` 一行装到 `~/.claude/skills/`
+- **OpenClaw**：ClawHub bundle 一次安装 MCP server + 5 个 skills
 
 > 架构思想来自 [opencli](https://github.com/jackwener/opencli) 的 single-registry 设计。
 
@@ -44,7 +45,7 @@
 
 ## ✨ 核心特性
 
-- 🔐 **16 个命令覆盖核心链路**：发布、下架、查询、图片上传、AI 类目识别、默认地址、IM 收发 + 会话列表、skills 安装
+- 🔐 **17 个命令覆盖核心链路**：发布、下架、查询、图片上传、AI 类目识别、默认地址、IM 收发 + 会话列表、skills 安装
 - 📡 **真·实时 IM**：WebSocket 长连 + 自动重连 + **三类事件分类输出**
   - `event=message`（收到消息）· `event=read`（已读回执）· `event=new_msg`（轻量通知）
 - 🛡 **内置风控护栏**：令牌桶限流（1 写/分钟）+ RGV587 自动熔断
@@ -107,6 +108,36 @@ skill 的源文件在仓库的 `skills/` 目录下（每个 skill 一个子目�
 ```bash
 claude /plugin marketplace add fancyboi999/goofish-cli
 ```
+
+---
+
+## OpenClaw / ClawHub
+
+OpenClaw `2026.6.1` 及以上可把本仓库作为 compatible bundle 加载。ClawHub 发布后：
+
+```bash
+openclaw plugins install clawhub:openclaw-goofish
+
+# 登录态由用户在终端初始化，不交给 Agent 覆盖
+uvx --from goofish-cli==0.3.0 goofish auth login --qr
+
+openclaw plugins inspect goofish --json
+openclaw gateway restart
+```
+
+本地开发无需发布：
+
+```bash
+openclaw plugins install -l .
+openclaw plugins inspect goofish --json
+```
+
+重启后新会话会获得 5 个 skills，以及 `goofish__auth_status`、
+`goofish__item_get` 等 MCP tools。bundle 默认不暴露需要操作者执行或会长期阻塞的
+`auth_login`、`auth_reset_guard`、`message_watch`、`skills_install`。
+
+运行 MCP server 需要 PATH 中有 [`uv`](https://docs.astral.sh/uv/)。完整说明见
+[MCP 接入指南](./docs/mcp-setup.md)。
 
 ---
 
