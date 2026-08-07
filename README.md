@@ -65,7 +65,7 @@ goofish auth login ~/Downloads/goofish-cookies.json
 
 # 3. 验证登录态
 goofish auth status
-# → {"unb":"2214350705775","tracknick":"xy575986224572","nick":"...","valid":true}
+# → {"unb":"<masked-unb>","tracknick":"<masked-tracknick>","nick":"...","valid":true}
 
 # 4. 干活
 goofish item get 1045171414271
@@ -144,8 +144,8 @@ $ goofish list-commands --format table
 
 ```json
 {
-  "unb": "2214350705775",
-  "tracknick": "xy575986224572",
+  "unb": "<masked-unb>",
+  "tracknick": "<masked-tracknick>",
   "nick": "闲鱼用户昵称",
   "valid": true,
   "h5_token_exp": "2026-04-21T20:30:00+08:00"
@@ -163,10 +163,10 @@ $ goofish message watch
 实时输出（小号给主号发 3 条 + 主号读了所有消息）：
 
 ```jsonl
-{"event":"message","cid":"60585751957","send_user_id":"2215266653893","send_user_name":"小号昵称","send_message":"测试消息1"}
-{"event":"message","cid":"60585751957","send_user_id":"2215266653893","send_user_name":"小号昵称","send_message":"测试消息2"}
-{"event":"message","cid":"60585751957","send_user_id":"2215266653893","send_user_name":"小号昵称","send_message":"测试消息3"}
-{"event":"read","cid":"60585751957","msg_ids":["4077151826249.PNM","4066820235744.PNM","4066826134477.PNM"],"status":1,"ts":"1776770953455"}
+{"event":"message","cid":"<masked-cid>","send_user_id":"<masked-user-id>","send_user_name":"小号昵称","send_message":"测试消息1"}
+{"event":"message","cid":"<masked-cid>","send_user_id":"<masked-user-id>","send_user_name":"小号昵称","send_message":"测试消息2"}
+{"event":"message","cid":"<masked-cid>","send_user_id":"<masked-user-id>","send_user_name":"小号昵称","send_message":"测试消息3"}
+{"event":"read","cid":"<masked-cid>","msg_ids":["<masked-msg-id-1>","<masked-msg-id-2>","<masked-msg-id-3>"],"status":1,"ts":"<masked-timestamp>"}
 ```
 
 | 事件 | 字段 |
@@ -182,12 +182,12 @@ $ goofish message watch
 <summary><b><code>goofish message send</code></b> — 主动发消息</summary>
 
 ```bash
-$ goofish message send 60585751957 2215266653893 \
+$ goofish message send <masked-cid> <masked-user-id> \
     --text "在的 claude 测试成功 ✅" --item-id 1045171414271
 ```
 
 ```json
-{"ok": true, "mid": "1061776769407570", "cid": "60585751957"}
+{"ok": true, "mid": "<masked-message-id>", "cid": "<masked-cid>"}
 ```
 </details>
 
