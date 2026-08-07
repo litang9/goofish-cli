@@ -49,7 +49,7 @@ jobs:
         run: uv run pytest -q
 
   build:
-    needs: test
+    needs: [test, sensitive-identifiers]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

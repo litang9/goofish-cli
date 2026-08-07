@@ -11,9 +11,9 @@ RULES = (
     (
         "sensitive field contains a concrete identifier",
         re.compile(
-            r"(?i)[\"'](?:unb|tracknick|cid|toid|sessionId|userId|send_user_id|"
-            r"senderUserId|peer_user_id|mid|msg_id)[\"']\s*:\s*"
-            r"(?:[\"'](?:\d{8,}|xy\d{6,})[\"']|\d{8,})"
+            r"(?i)(?<![\w])[\"']?(?:unb|tracknick|cid|toid|sessionId|userId|"
+            r"send_user_id|senderUserId|peer_user_id|mid|msg_id)[\"']?\s*"
+            r"(?::|=)\s*[\"']?(?:\d{8,}|xy\d{6,})(?!\d)"
         ),
     ),
     (
@@ -36,10 +36,10 @@ RULES = (
 
 def scan_text(text: str) -> list[tuple[int, str]]:
     findings: list[tuple[int, str]] = []
-    for line_number, line in enumerate(text.splitlines(), start=1):
-        for description, pattern in RULES:
-            if pattern.search(line):
-                findings.append((line_number, description))
+    for description, pattern in RULES:
+        for match in pattern.finditer(text):
+            line_number = text.count("\n", 0, match.start()) + 1
+            findings.append((line_number, description))
     return findings
 
 
