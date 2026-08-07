@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
@@ -63,27 +65,46 @@ test("documents host-specific MCP tool names", () => {
 });
 
 test("packs only the OpenClaw bundle metadata, docs, and skills", () => {
-  const output = execFileSync("npm", ["pack", "--dry-run", "--json"], {
-    cwd: new URL("..", import.meta.url),
-    encoding: "utf8",
-  });
-  const packed = JSON.parse(output)[0];
-  const files = new Set(packed.files.map((entry) => entry.path));
+  const packDirectory = mkdtempSync(join(tmpdir(), "openclaw-goofish-pack-"));
+  const repository = new URL("..", import.meta.url);
 
-  for (const required of [
-    "package.json",
-    ".codex-plugin/plugin.json",
-    ".mcp.json",
-    "openclaw.plugin.json",
-    "docs/mcp-setup.md",
-    "skills/goofish-overview/SKILL.md",
-  ]) {
-    assert.ok(files.has(required), `missing packed file: ${required}`);
-  }
+  try {
+    const output = execFileSync(
+      "npm",
+      ["pack", "--json", "--pack-destination", packDirectory],
+      { cwd: repository, encoding: "utf8" },
+    );
+    const packed = JSON.parse(output)[0];
+    const archive = join(packDirectory, packed.filename);
+    const files = new Set(packed.files.map((entry) => entry.path));
 
-  for (const entry of files) {
-    assert.ok(!entry.startsWith("src/"), `Python source leaked into plugin package: ${entry}`);
-    assert.ok(!entry.startsWith("tests/"), `Python tests leaked into plugin package: ${entry}`);
-    assert.ok(!entry.includes("cookie"), `cookie-bearing path leaked into package: ${entry}`);
+    for (const required of [
+      "package.json",
+      ".codex-plugin/plugin.json",
+      ".mcp.json",
+      "openclaw.plugin.json",
+      "docs/mcp-setup.md",
+      "skills/goofish-overview/SKILL.md",
+    ]) {
+      assert.ok(files.has(required), `missing packed file: ${required}`);
+    }
+
+    const sensitiveValue =
+      /["'](?:unb|tracknick|cid|toid|send_user_id|mid|msg_id)["']\s*:\s*["'](?!<masked-)[^"']{6,}["']/;
+    const rawMessageId = /\b\d{10,}\.PNM\b/;
+
+    for (const entry of files) {
+      assert.ok(!entry.startsWith("src/"), `Python source leaked into plugin package: ${entry}`);
+      assert.ok(!entry.startsWith("tests/"), `Python tests leaked into plugin package: ${entry}`);
+      assert.ok(!entry.includes("cookie"), `cookie-bearing path leaked into package: ${entry}`);
+
+      const content = execFileSync("tar", ["-xOf", archive, `package/${entry}`], {
+        encoding: "utf8",
+      });
+      assert.doesNotMatch(content, sensitiveValue, `account identifier leaked in ${entry}`);
+      assert.doesNotMatch(content, rawMessageId, `message identifier leaked in ${entry}`);
+    }
+  } finally {
+    rmSync(packDirectory, { recursive: true, force: true });
   }
 });
